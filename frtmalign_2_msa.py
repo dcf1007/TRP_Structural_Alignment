@@ -94,31 +94,34 @@ def paths_dic(locations='./paths.txt'):
     return paths
 
 def get_struct(pdbid, savedir, provdir):
-    # First tries to get structure from OPM
-    url = 'https://opm-assets.storage.googleapis.com/pdb/' + pdbid + '.pdb'
-    res = requests.get(url, allow_redirects=True)
-    if not res.status_code == 200:
-        # If structure not found in OPM, look for user-provided structure file
-        print("Warning: Found no record in OPM for %s. Checking %s." % (pdbid, provdir))
-        try:
-            shutil.copyfile(provdir+pdbid+'.pdb', savedir+pdbid+ '.pdb')
-        except:
-            # If no user-provided structure file, try to get structure from PDB
-            print("Warning: Found no provided structure file for %s in %s. Checking PDB." %(pdbid, provdir))
-            pdb_url = 'https://files.rcsb.org/download/' + pdbid + '.pdb'
-            pdb_res = requests.get(url, allow_redirects=True)
-            if not pdb_res.status_code == 200:
-                # If structure not found in PDB, print warning and skip structure
-                print("Warning: found no record in OPM, %s, or PDB for %s, so it will be ignored." % (provdir, pdbid))
-                return False
-            else:
-                open(savedir + pdbid + '.pdb', 'wb').write(pdb_res.content)
-                return True
-        return True
+  if not os.path.isfile(savedir+pdbid+ '.pdb'):
+      # First tries to get structure from OPM
+      url = 'https://opm-assets.storage.googleapis.com/pdb/' + pdbid + '.pdb'
+      res = requests.get(url, allow_redirects=True)
+      if not res.status_code == 200:
+          # If structure not found in OPM, look for user-provided structure file
+          print("Warning: Found no record in OPM for %s. Checking %s." % (pdbid, provdir))
+          try:
+              shutil.copyfile(provdir+pdbid+'.pdb', savedir+pdbid+ '.pdb')
+          except:
+              # If no user-provided structure file, try to get structure from PDB
+              print("Warning: Found no provided structure file for %s in %s. Checking PDB." %(pdbid, provdir))
+              pdb_url = 'https://files.rcsb.org/download/' + pdbid + '.pdb'
+              pdb_res = requests.get(url, allow_redirects=True)
+              if not pdb_res.status_code == 200:
+                  # If structure not found in PDB, print warning and skip structure
+                  print("Warning: found no record in OPM, %s, or PDB for %s, so it will be ignored." % (provdir, pdbid))
+                  return False
+              else:
+                  open(savedir + pdbid + '.pdb', 'wb').write(pdb_res.content)
+                  return True
+          return True
+      else:
+          open(savedir + pdbid + '.pdb', 'wb').write(res.content)
+          return True
     else:
-        open(savedir + pdbid + '.pdb', 'wb').write(res.content)
         return True
-
+      
 def xml_parser(xml_file):
     xml = open(xml_file, 'r')
     pdb_dic = {}
@@ -276,116 +279,124 @@ def strip_tm_chains(wkdir,inputf,pdb_path,chains_data):
     o.close()
     return resid_count
     
-def batch_frtmalign(in_file_path, out_dir, frtmalign_path, original_dir, clean_dir):
-  arg_list = []
-  with tempfile.TemporaryDirectory() as tmpdirname:
+def batch_frtmalign(in_file_path, out_dir, frtmalign_path, original_dir, clean_dir, tmpdirname):
+    arg_list = []
+    #with tempfile.TemporaryDirectory() as tmpdirname:
     #print(tmpdirname)
     tmpdirnamefull = tmpdirname+"/"
     for pdb_file in glob.glob(in_file_path + "*pdb"):
-      file_name = os.path.split(pdb_file)
-      shutil.copy2(pdb_file, tmpdirnamefull+file_name[1])
-    for station_file in glob.glob(tmpdirnamefull + "*.pdb"):
-      # for each file (stationary), run Fr-TM-Align against all other file names (mobile) and place into directory named for stationary protein
-      station_name = station_file[-14:-10]
-      out_file_path = "%sstationary_%s/" %(tmpdirnamefull, station_name)
-      outfilename = out_file_path + station_name + ".pdb"
-      os.makedirs(os.path.dirname(outfilename), exist_ok=True)
-      for mobile_file in glob.glob(tmpdirnamefull + "*.pdb"):
-        mobile_name = mobile_file[-14:-10]
-        arg_list.append((mobile_file, station_file, out_file_path, mobile_name, station_name, frtmalign_path, original_dir, clean_dir))
+        file_name = os.path.split(pdb_file)
+        if not os.path.isfile(tmpdirnamefull+file_name[1]):
+            shutil.copy2(pdb_file, tmpdirnamefull+file_name[1])
+      for station_file in glob.glob(tmpdirnamefull + "*.pdb"):
+        # for each file (stationary), run Fr-TM-Align against all other file names (mobile) and place into directory named for stationary protein
+        station_name = station_file[-14:-10]
+        out_file_path = "%sstationary_%s/" %(tmpdirnamefull, station_name)
+        outfilename = out_file_path + station_name + ".pdb"
+        os.makedirs(os.path.dirname(outfilename), exist_ok=True)
+        for mobile_file in glob.glob(tmpdirnamefull + "*.pdb"):
+            mobile_name = mobile_file[-14:-10]
+            arg_list.append((mobile_file, station_file, out_file_path, mobile_name, station_name, frtmalign_path, original_dir, clean_dir))
     # use parallel processing to speed up Fr-TM-Align batch alignment
     n_cpus = mp.cpu_count()
     pool = mp.Pool(n_cpus)
     results = [pool.apply(single_frtmalign, args=arg_tup) for arg_tup in arg_list]
     for root, dirs, files in os.walk(tmpdirname, topdown=False):
-      dir_name = os.path.split(root)[1]
-      if dir_name.startswith('stationary'):
-        try:
-          os.mkdir(os.path.join(out_dir, dir_name))
-        except OSError as exc:
-          if exc.errno != errno.EEXIST:
-            raise
-          pass
-        for item in files:
-          shutil.copy2(os.path.join(root, item), os.path.join(out_dir, dir_name, item))
+        dir_name = os.path.split(root)[1]
+        if dir_name.startswith('stationary'):
+            try:
+                os.mkdir(os.path.join(out_dir, dir_name))
+            except OSError as exc:
+                if exc.errno != errno.EEXIST:
+                    raise
+                pass
+            for item in files:
+                shutil.copy2(os.path.join(root, item), os.path.join(out_dir, dir_name, item))
 
 def single_frtmalign(mobile_file, station_file, out_file_path, mobile_name, station_name, frtmalign_path, original_dir, clean_dir):
-  print('m: %s, s: %s' %(mobile_name, station_name))
-  fnull = open(os.devnull, 'w')
-  bash_frtmalign = "%s %s %s -o %s%s_%s.sup -m 1" %(frtmalign_path, mobile_file, station_file, out_file_path, mobile_name, station_name)
-  fileout = open("%s%s_%s.frtxt" %(out_file_path, mobile_name, station_name), "w+")
-  #print(bash_frtmalign.split())
-  #print(os.getcwd())
-  p = subprocess.Popen(bash_frtmalign.split(), stdout=fileout, stderr=fnull)
-  p.wait()
-  fileout.close()
-  fnull.close()
-  curr_dir = os.getcwd() + '/'
-  if os.path.exists(curr_dir + 'trf.mat'): # for each mobile file, a transformation matrix will be created; rename the transform file and save for future use
-    shutil.copy2(curr_dir + 'trf.mat', out_file_path + mobile_name + '_' + station_name + '.mat')
-  else:
-    raise SystemExit(curr_dir + 'trf.mat does not exist.')
+    print('m: %s, s: %s' %(mobile_name, station_name))
+    if not os.path.isfile("%s%s_%s.frtxt" %(out_file_path, mobile_name, station_name)):
+        fnull = open(os.devnull, 'w')
+        bash_frtmalign = "%s %s %s -o %s%s_%s.sup -m 1" %(frtmalign_path, mobile_file, station_file, out_file_path, mobile_name, station_name)
+        fileout = open("%s%s_%s.frtxt" %(out_file_path, mobile_name, station_name), "w+")
+        #print(bash_frtmalign.split())
+        #print(os.getcwd())
+        p = subprocess.Popen(bash_frtmalign.split(), stdout=fileout, stderr=fnull)
+        p.wait()
+        fileout.close()
+        fnull.close()
+    else:
+        print("Already aligned")
+    curr_dir = os.getcwd() + '/'
+    if os.path.exists(curr_dir + 'trf.mat'): # for each mobile file, a transformation matrix will be created; rename the transform file and save for future use
+        if not os.path.isfile(out_file_path + mobile_name + '_' + station_name + '.mat'):
+            shutil.copy2(curr_dir + 'trf.mat', out_file_path + mobile_name + '_' + station_name + '.mat')
+    else:
+        raise SystemExit(curr_dir + 'trf.mat does not exist.')
     # apply the transformation matrix to the original structure and to the cleaned structure
-  transform_pdb("%s%s.pdb" %(original_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_full_align.pdb")
-  transform_pdb("%s%s_clean.pdb" %(clean_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_tmem_align.pdb")
+    transform_pdb("%s%s.pdb" %(original_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_full_align.pdb")
+    transform_pdb("%s%s_clean.pdb" %(clean_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_tmem_align.pdb")
 
 def transform_pdb(pdbin, transformin, mobile_name, station_name, file_path, suffix):
-  # make x, y, and z coordinate lists
-  x_coord = list()
-  y_coord = list()
-  z_coord = list()
-  pdb_file = open(pdbin, "r")
-  for line in pdb_file:
-    # read in coordinates from ATOM lines
-    if line.startswith("ATOM") or line.startswith("HETATM"):
-      x_coord.append(float(line[30:38].strip()))
-      y_coord.append(float(line[38:46].strip()))
-      z_coord.append(float(line[46:54].strip()))
-  pdb_file.close()
-  # convert x, y, and z coordinate lists into single numpy matrix
-  xyz_coord = np.column_stack((x_coord, y_coord, z_coord))
-  # read translation and rotation matrices into separate numpy matrices
-  n_lines = 0
-  transl = list()
-  rot_x = list()
-  rot_y = list()
-  rot_z = list()
-  transform_file = open(transformin, "r")
-  for line in transform_file:
-    if n_lines >= 2:
-      # split data lines based on whitespace
-      split_line = line.split()
-      transl.append(float(split_line[1]))
-      rot_x.append(float(split_line[2]))
-      rot_y.append(float(split_line[3]))
-      rot_z.append(float(split_line[4]))
-    n_lines += 1
-  transform_file.close()
-  tra_mat = np.asarray(transl)
-  rot_mat = np.column_stack((rot_x, rot_y, rot_z))
-  # apply translation and rotation matrices to original coordinates
-  xyz_coord_rot = np.matmul(xyz_coord, np.transpose(rot_mat))  
-  xyz_coord_rot_tra = xyz_coord_rot + np.transpose(tra_mat)
+    if not os.path.isfile(file_path + mobile_name + "_" + station_name +suffix):
+        # make x, y, and z coordinate lists
+        x_coord = list()
+        y_coord = list()
+        z_coord = list()
+        pdb_file = open(pdbin, "r")
+        for line in pdb_file:
+            # read in coordinates from ATOM lines
+            if line.startswith("ATOM") or line.startswith("HETATM"):
+                x_coord.append(float(line[30:38].strip()))
+                y_coord.append(float(line[38:46].strip()))
+                z_coord.append(float(line[46:54].strip()))
+        pdb_file.close()
+        # convert x, y, and z coordinate lists into single numpy matrix
+        xyz_coord = np.column_stack((x_coord, y_coord, z_coord))
+        # read translation and rotation matrices into separate numpy matrices
+        n_lines = 0
+        transl = list()
+        rot_x = list()
+        rot_y = list()
+        rot_z = list()
+        transform_file = open(transformin, "r")
+        for line in transform_file:
+            if n_lines >= 2:
+                # split data lines based on whitespace
+                split_line = line.split()
+                transl.append(float(split_line[1]))
+                rot_x.append(float(split_line[2]))
+                rot_y.append(float(split_line[3]))
+                rot_z.append(float(split_line[4]))
+            n_lines += 1
+        transform_file.close()
+        tra_mat = np.asarray(transl)
+        rot_mat = np.column_stack((rot_x, rot_y, rot_z))
+        # apply translation and rotation matrices to original coordinates
+        xyz_coord_rot = np.matmul(xyz_coord, np.transpose(rot_mat))  
+        xyz_coord_rot_tra = xyz_coord_rot + np.transpose(tra_mat)
   
-  # make new pdb file with updated coordinates
-  n_lines = 0
-  pdb_file = open(pdbin, "r")
-  outfilename = file_path + mobile_name + "_" + station_name +suffix
-  os.makedirs(os.path.dirname(outfilename), exist_ok=True)
-  fileout = open(outfilename, "a")
-  for line in pdb_file:
-    if line.startswith("ATOM") or line.startswith("HETATM"):
-      new_x = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,0])
-      new_y = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,1])
-      new_z = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,2])
-      line_new_coor = line[:30]+new_x+new_y+new_z+line[54:]
-      fileout.write(line_new_coor)
-      n_lines += 1
+        # make new pdb file with updated coordinates
+        n_lines = 0
+        pdb_file = open(pdbin, "r")
+        outfilename = file_path + mobile_name + "_" + station_name +suffix
+        os.makedirs(os.path.dirname(outfilename), exist_ok=True)
+        fileout = open(outfilename, "a")
+        for line in pdb_file:
+            if line.startswith("ATOM") or line.startswith("HETATM"):
+                new_x = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,0])
+                new_y = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,1])
+                new_z = '{:8.3f}'.format(xyz_coord_rot_tra[n_lines,2])
+                line_new_coor = line[:30]+new_x+new_y+new_z+line[54:]
+                fileout.write(line_new_coor)
+                n_lines += 1
+            else:
+                fileout.write(line)
+        fileout.close()
+        pdb_file.close()
     else:
-      fileout.write(line)
-  fileout.close()
-  pdb_file.close()
-    
+        print("Already exists")
+
 def frtmalign_2_list(directory_in):
   all_list = list()
   frtmalign_text_files = glob.glob(directory_in + "/**/*.frtxt")
