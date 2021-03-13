@@ -288,7 +288,7 @@ def batch_frtmalign(in_file_path, out_dir, frtmalign_path, original_dir, clean_d
         file_name = os.path.split(pdb_file)
         if not os.path.isfile(tmpdirnamefull+file_name[1]):
             shutil.copy2(pdb_file, tmpdirnamefull+file_name[1])
-      for station_file in glob.glob(tmpdirnamefull + "*.pdb"):
+    for station_file in glob.glob(tmpdirnamefull + "*.pdb"):
         # for each file (stationary), run Fr-TM-Align against all other file names (mobile) and place into directory named for stationary protein
         station_name = station_file[-14:-10]
         out_file_path = "%sstationary_%s/" %(tmpdirnamefull, station_name)
@@ -333,6 +333,7 @@ def single_frtmalign(mobile_file, station_file, out_file_path, mobile_name, stat
             shutil.copy2(curr_dir + 'trf.mat', out_file_path + mobile_name + '_' + station_name + '.mat')
     else:
         raise SystemExit(curr_dir + 'trf.mat does not exist.')
+    
     # apply the transformation matrix to the original structure and to the cleaned structure
     transform_pdb("%s%s.pdb" %(original_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_full_align.pdb")
     transform_pdb("%s%s_clean.pdb" %(clean_dir, mobile_name), "%s%s_%s.mat" %(out_file_path, mobile_name, station_name), mobile_name, station_name, out_file_path, "_tmem_align.pdb")
@@ -373,7 +374,7 @@ def transform_pdb(pdbin, transformin, mobile_name, station_name, file_path, suff
         tra_mat = np.asarray(transl)
         rot_mat = np.column_stack((rot_x, rot_y, rot_z))
         # apply translation and rotation matrices to original coordinates
-        xyz_coord_rot = np.matmul(xyz_coord, np.transpose(rot_mat))  
+        xyz_coord_rot = np.matmul(xyz_coord, np.transpose(rot_mat))
         xyz_coord_rot_tra = xyz_coord_rot + np.transpose(tra_mat)
   
         # make new pdb file with updated coordinates
